@@ -1,0 +1,13 @@
+import crypto from "node:crypto";
+
+export function createId(): string {
+  return crypto.randomUUID();
+}
+
+export function createOpaqueToken(): string {
+  return crypto.randomBytes(32).toString("base64url");
+}
+
+export function hashToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
