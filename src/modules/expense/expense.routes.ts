@@ -1,7 +1,11 @@
 import { Router } from "express";
 import { authenticate } from "../../middleware/authenticate";
 import type { AuthService } from "../auth/auth.service";
-import { expenseIdParamSchema, expensePayloadSchema } from "./expense.schemas";
+import {
+  createExpensePayloadSchema,
+  expenseIdParamSchema,
+  expensePayloadSchema
+} from "./expense.schemas";
 import type { ExpenseService } from "./expense.service";
 
 export function createExpenseRouter(authService: AuthService, expenseService: ExpenseService): Router {
@@ -17,13 +21,15 @@ export function createExpenseRouter(authService: AuthService, expenseService: Ex
 
   router.post("/", async (request, response, next) => {
     try {
-      const payload = expensePayloadSchema.parse(request.body);
+      const payload = createExpensePayloadSchema.parse(request.body);
       const expense = await expenseService.createExpense({
         userId: request.auth!.userId,
         category: payload.category,
         description: payload.description,
         amount: payload.amount,
-        spentDate: payload.spentDate
+        spentDate: payload.spentDate,
+        inputText: payload.inputText,
+        inputSource: payload.inputSource
       });
 
       response.status(201).json({ expense });

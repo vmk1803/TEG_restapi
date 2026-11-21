@@ -5,29 +5,25 @@ import helmet from "helmet";
 import type { Pool } from "mysql2/promise";
 import { createMySqlPool, ensureDatabaseSchema } from "./db/mysql";
 import { errorHandler } from "./middleware/error-handler";
-import { createAdminRouter } from "./modules/admin/admin.routes";
-import { createAuthRouter, type RefreshCookieConfig } from "./modules/auth/auth.routes";
+import type { RefreshCookieConfig } from "./modules/auth/auth.routes";
 import { AuthService } from "./modules/auth/auth.service";
 import { MySqlRefreshTokenRepository } from "./modules/auth/refresh-token.repository";
 import type { RefreshTokenStore } from "./modules/auth/refresh-token.store";
-import { createExpenseRouter } from "./modules/expense/expense.routes";
 import { MySqlExpenseRepository } from "./modules/expense/expense.repository";
 import { ExpenseService } from "./modules/expense/expense.service";
 import type { ExpenseStore } from "./modules/expense/expense.store";
-import { createIncomeRouter } from "./modules/income/income.routes";
 import { IncomeService } from "./modules/income/income.service";
 import type { IncomeStore } from "./modules/income/income.store";
 import { MySqlIncomeRepository } from "./modules/income/income.repository";
-import { createOverviewRouter } from "./modules/overview/overview.routes";
 import { OverviewService } from "./modules/overview/overview.service";
-import { createPersonalizationRouter } from "./modules/personalization/personalization.routes";
-import { createRecurringRouter } from "./modules/recurring/recurring.routes";
+import { SmartAddService } from "./modules/smart-add/smart-add.service";
 import { MySqlRecurringExpenseRepository } from "./modules/recurring/recurring.repository";
 import { RecurringExpenseService } from "./modules/recurring/recurring.service";
 import type { RecurringExpenseStore } from "./modules/recurring/recurring.store";
 import type { UserStore } from "./modules/users/user.store";
 import { MySqlUserRepository } from "./modules/users/user.repository";
 import { currentYearMonth, generateRecurringExpensesForMonth } from "./jobs/recurring-expenses-job";
+import { registerRoutes } from "./routes";
 
 export type AppConfig = {
   jwtSecret: string;
@@ -36,6 +32,8 @@ export type AppConfig = {
   refreshRotationThresholdSeconds: number;
   nodeEnv: "development" | "test" | "production";
   databaseUrl?: string;
+  /** Smart Add AI settings. Without an apiKey, Smart Add returns an empty result. */
+  groq?: { apiKey?: string; apiUrl: string; model: string };
 };
 
 type AppDependencies = {
@@ -58,6 +56,7 @@ export type AppContext = {
   recurringRepository: RecurringExpenseStore;
   recurringService: RecurringExpenseService;
   overviewService: OverviewService;
+  smartAddService: SmartAddService;
   refreshTokenRepository: RefreshTokenStore;
   userRepository: UserStore;
   initialize: () => Promise<void>;
@@ -99,6 +98,8 @@ export function createApp(config: AppConfig, dependencies: AppDependencies = {})
   const incomeService = new IncomeService(incomeRepository);
   const recurringService = new RecurringExpenseService(recurringRepository, incomeRepository);
   const overviewService = new OverviewService(incomeRepository, expenseRepository);
+  const groqConfig = config.groq?.apiKey ? { ...config.groq, apiKey: config.groq.apiKey } : null;
+  const smartAddService = new SmartAddService(incomeRepository, groqConfig);
 
   const refreshCookieConfig: RefreshCookieConfig = {
     ttlSeconds: config.refreshTokenTtlSeconds,
@@ -114,19 +115,16 @@ export function createApp(config: AppConfig, dependencies: AppDependencies = {})
   app.use(express.json());
   app.use(cookieParser());
 
-  app.get("/api/health", (_request, response) => {
-    response.status(200).json({
-      status: "ok"
-    });
+  registerRoutes(app, {
+    authService,
+    refreshCookieConfig,
+    userRepository,
+    expenseService,
+    incomeService,
+    recurringService,
+    overviewService,
+    smartAddService
   });
-
-  app.use("/api/auth", createAuthRouter(authService, refreshCookieConfig));
-  app.use("/api/admin", createAdminRouter(authService, userRepository));
-  app.use("/api/expenses", createExpenseRouter(authService, expenseService));
-  app.use("/api/income", createIncomeRouter(authService, incomeService));
-  app.use("/api/recurring", createRecurringRouter(authService, recurringService));
-  app.use("/api/overview", createOverviewRouter(authService, overviewService));
-  app.use("/api/personalization", createPersonalizationRouter(authService));
 
   app.use(errorHandler);
 
@@ -141,6 +139,7 @@ export function createApp(config: AppConfig, dependencies: AppDependencies = {})
     recurringRepository,
     recurringService,
     overviewService,
+    smartAddService,
     refreshTokenRepository,
     userRepository,
     initialize: async () => {

@@ -2,7 +2,7 @@ import { createId } from "../../lib/crypto";
 import { HttpError } from "../../lib/http-error";
 import { incomeCategories } from "../income/income.types";
 import type { ExpenseStore } from "./expense.store";
-import type { ExpenseRecord, ExpenseView } from "./expense.types";
+import type { ExpenseInputSource, ExpenseRecord, ExpenseView } from "./expense.types";
 
 const expenseCategoryMap = new Map(incomeCategories.map((category) => [category.code, category.name]));
 
@@ -19,6 +19,8 @@ export class ExpenseService {
     description: string;
     amount: number;
     spentDate: string;
+    inputText?: string;
+    inputSource?: ExpenseInputSource;
   }): Promise<ExpenseView> {
     this.validateExpense(input.category, input.description, input.amount, input.spentDate);
 
@@ -30,6 +32,8 @@ export class ExpenseService {
       description: input.description.trim(),
       amount: input.amount,
       spentDate: input.spentDate,
+      inputText: input.inputText?.trim() ?? null,
+      inputSource: input.inputSource ?? null,
       createdAt: now,
       updatedAt: now
     });

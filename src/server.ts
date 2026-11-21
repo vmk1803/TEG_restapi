@@ -9,8 +9,15 @@ async function startServer() {
     refreshTokenTtlSeconds: env.REFRESH_TOKEN_TTL_SECONDS,
     refreshRotationThresholdSeconds: env.REFRESH_ROTATION_THRESHOLD_SECONDS,
     nodeEnv: env.NODE_ENV,
-    databaseUrl: env.DATABASE_URL
+    databaseUrl: env.DATABASE_URL,
+    groq: { apiKey: env.GROQ_API_KEY, apiUrl: env.GROQ_API_URL, model: env.GROQ_API_MODEL }
   });
+
+  console.log(
+    env.GROQ_API_KEY
+      ? `[smart-add] AI parsing enabled (model ${env.GROQ_API_MODEL})`
+      : "[smart-add] AI parsing disabled: GROQ_API_KEY not set"
+  );
 
   await initialize();
 

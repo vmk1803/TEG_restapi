@@ -253,3 +253,139 @@ describe("expense flow", () => {
     expect(listResponse.body.expenses).toHaveLength(0);
   });
 });
+
+describe("smart add input fields", () => {
+  const contexts: Array<ReturnType<typeof buildTestContext>> = [];
+
+  const validPayload = {
+    category: "FOOD",
+    description: "Coffee at Starbucks",
+    amount: 250,
+    spentDate: "2026-05-02"
+  };
+
+  afterEach(async () => {
+    for (const context of contexts.splice(0)) {
+      await context.close();
+    }
+  });
+
+  async function setup(email: string) {
+    const context = buildTestContext();
+    contexts.push(context);
+    const token = await signupAndGetToken(context.app, email);
+
+    const post = (body: Record<string, unknown>) =>
+      request(context.app)
+        .post("/api/expenses")
+        .set("Authorization", `Bearer ${token}`)
+        .send(body);
+
+    return { context, token, post };
+  }
+
+  it("stores inputText and inputSource on create and returns them in the list", async () => {
+    const { context, token, post } = await setup("smart-voice@example.com");
+
+    const createResponse = await post({
+      ...validPayload,
+      inputText: "250 for coffee at Starbucks",
+      inputSource: "voice"
+    });
+
+    expect(createResponse.status).toBe(201);
+    expect(createResponse.body.expense.inputText).toBe("250 for coffee at Starbucks");
+    expect(createResponse.body.expense.inputSource).toBe("voice");
+
+    const listResponse = await request(context.app)
+      .get("/api/expenses")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.body.expenses[0].inputText).toBe("250 for coffee at Starbucks");
+    expect(listResponse.body.expenses[0].inputSource).toBe("voice");
+  });
+
+  it("stores null input fields when they are not sent", async () => {
+    const { post } = await setup("smart-none@example.com");
+
+    const response = await post(validPayload);
+
+    expect(response.status).toBe(201);
+    expect(response.body.expense.inputText).toBeNull();
+    expect(response.body.expense.inputSource).toBeNull();
+  });
+
+  it("rejects an unknown inputSource", async () => {
+    const { post } = await setup("smart-source@example.com");
+
+    const response = await post({ ...validPayload, inputText: "coffee 250", inputSource: "keyboard" });
+
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe("VALIDATION_FAILED");
+    expect(
+      response.body.issues.some((issue: { path: string }) => String(issue.path).includes("inputSource"))
+    ).toBe(true);
+  });
+
+  it("rejects inputText longer than 500 characters", async () => {
+    const { post } = await setup("smart-long@example.com");
+
+    const response = await post({ ...validPayload, inputText: "a".repeat(501), inputSource: "text" });
+
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("rejects whitespace-only inputText", async () => {
+    const { post } = await setup("smart-blank@example.com");
+
+    const response = await post({ ...validPayload, inputText: "   ", inputSource: "text" });
+
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("requires inputText and inputSource to be sent together", async () => {
+    const { post } = await setup("smart-pair@example.com");
+
+    const textOnly = await post({ ...validPayload, inputText: "coffee 250" });
+    const sourceOnly = await post({ ...validPayload, inputSource: "voice" });
+
+    for (const response of [textOnly, sourceOnly]) {
+      expect(response.status).toBe(400);
+      expect(response.body.code).toBe("VALIDATION_FAILED");
+      expect(JSON.stringify(response.body)).toContain("must be sent together");
+    }
+  });
+
+  it("trims inputText before storing it", async () => {
+    const { post } = await setup("smart-trim@example.com");
+
+    const response = await post({ ...validPayload, inputText: "  coffee 250  ", inputSource: "text" });
+
+    expect(response.status).toBe(201);
+    expect(response.body.expense.inputText).toBe("coffee 250");
+  });
+
+  it("keeps the original input fields when the expense is updated", async () => {
+    const { context, token, post } = await setup("smart-update@example.com");
+
+    const created = await post({
+      ...validPayload,
+      inputText: "250 for coffee at Starbucks",
+      inputSource: "voice"
+    });
+    expect(created.status).toBe(201);
+
+    const updateResponse = await request(context.app)
+      .put(`/api/expenses/${created.body.expense.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ ...validPayload, amount: 300, inputText: "changed", inputSource: "text" });
+
+    expect(updateResponse.status).toBe(200);
+    expect(updateResponse.body.expense.amount).toBe(300);
+    expect(updateResponse.body.expense.inputText).toBe("250 for coffee at Starbucks");
+    expect(updateResponse.body.expense.inputSource).toBe("voice");
+  });
+});

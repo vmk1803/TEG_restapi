@@ -17,6 +17,8 @@ There is no lint script. Type-check by running `npm run build` (or `npx tsc --no
 
 Required in `.env` (validated by [src/config/env.ts](src/config/env.ts)): `PORT`, `JWT_SECRET` (≥16 chars), `JWT_EXPIRES_IN` (access TTL, default `15m`), `REFRESH_TOKEN_TTL_SECONDS` (default 30d), `REFRESH_ROTATION_THRESHOLD_SECONDS` (minimum interval between refresh-token rotations, default 1d), `DATABASE_URL`. `NODE_ENV` defaults to `development`.
 
+Optional, for Smart Add AI parsing: `GROQ_API_KEY`, `GROQ_API_URL` (default Groq chat completions), `GROQ_API_MODEL` (default `llama-3.3-70b-versatile`). Without the key the app still starts and `POST /api/expenses/parse` returns an empty result. `server.ts` passes them to `createApp` as `config.groq`; services never import `env.ts` directly.
+
 Runtime expects an existing MySQL database — the app auto-creates tables on startup but does not create the database itself.
 
 ## Architecture
@@ -57,7 +59,7 @@ Roles (`USER`, `ADMIN`) live in [user.types.ts](src/modules/users/user.types.ts)
 
 - **Never return `passwordHash`** — use the `toSafeUser()` helper.
 - **Validate writes with Zod** before any business logic; password rules live in `auth.schemas.ts`.
-- **Mirror the module shape** when adding a new resource: `*.types.ts`, `*.store.ts`, `*.repository.ts`, `in-memory-*.repository.ts`, `*.schemas.ts`, `*.service.ts`, `*.routes.ts`, then wire into `src/app.ts`.
+- **Mirror the module shape** when adding a new resource: `*.types.ts`, `*.store.ts`, `*.repository.ts`, `in-memory-*.repository.ts`, `*.schemas.ts`, `*.service.ts`, `*.routes.ts`, then build the service in `src/app.ts` and mount its router in [src/routes.ts](src/routes.ts).
 - **App code is camelCase, DB columns are snake_case** — the mapping happens in the MySQL repository.
 - Errors thrown as `HttpError(status, message, code?)` ([src/lib/http-error.ts](src/lib/http-error.ts)); `ZodError` and `HttpError` are converted to JSON by [error-handler.ts](src/middleware/error-handler.ts), everything else becomes 500.
 - **Error response shape**: `{ code?, message, ... }`. Auth errors carry a stable `code` from [src/modules/auth/auth.error-codes.ts](src/modules/auth/auth.error-codes.ts) (`LOGGED_IN_ELSEWHERE`, `UNKNOWN_REFRESH_TOKEN`, `INVALID_CREDENTIALS`, etc.) — frontend should switch on `code`, not message text. Zod failures emit `code: "VALIDATION_FAILED"` plus an `issues[]` array. Unhandled errors emit `code: "INTERNAL_ERROR"`. Non-auth `HttpError`s currently omit `code` (frontend disambiguates via HTTP status).
